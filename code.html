@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Giám sát chỉ tiêu ao nuôi</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+:root{
+  --bg:#f4f6f9; --panel:#fff; --muted:#64748b;
+  --ok:#16a34a; --warn:#f59e0b; --bad:#ef4444; --accent:#2563eb;
+}
+*{box-sizing:border-box}
+body{margin:0; font-family:Roboto,system-ui,Segoe UI,Arial; background:var(--bg); color:#0f172a}
+header{background:var(--panel); padding:16px; text-align:center; font-weight:700; font-size:20px;
+       box-shadow:0 2px 6px rgba(0,0,0,.06); position:sticky; top:0; z-index:2}
+.toolbar{display:flex; gap:10px; justify-content:center; align-items:center; padding:12px; flex-wrap:wrap}
+button{background:var(--accent); color:#fff; border:0; padding:10px 14px; border-radius:10px; font-weight:700; cursor:pointer}
+button.secondary{background:#e5e7eb; color:#111827}
+input[type=number]{width:90px; padding:8px; border:1px solid #cbd5e1; border-radius:8px}
+.cards{display:flex; flex-wrap:wrap; gap:16px; padding:16px; justify-content:center}
+.card{background:var(--panel); padding:16px; border-radius:14px; text-align:center; flex:1 1 220px;
+      box-shadow:0 2px 6px rgba(0,0,0,.06)}
+.value{font-size:26px; font-weight:700}
+.muted{color:var(--muted); font-size:12px}
+.pill{display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:700; border:1px solid transparent}
+.pill.ok{color:var(--ok); border-color:var(--ok); background:#dcfce7}
+.pill.warn{color:var(--warn); border-color:var(--warn); background:#fef3c7}
+.panel{background:var(--panel); margin:16px; padding:16px; border-radius:12px; box-shadow:0 2px 6px rgba(0,0,0,.06)}
+.grid{display:grid; gap:10px}
+.grid.cols-2{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.alert-box{text-align:center; padding:10px; margin:10px 16px; border-radius:10px; background:var(--bad); color:#fff; display:none; font-weight:700}
+canvas{background:var(--panel); border-radius:12px; padding:8px; margin:0 16px 16px; box-shadow:0 2px 6px rgba(0,0,0,.06)}
+hr{border:none; height:1px; background:#e5e7eb; margin:10px 0}
+.small{font-size:12px; color:var(--muted)}
+</style>
+</head>
+<body>
+
+<header>GIÁM SÁT CHỈ TIÊU AO NUÔI</header>
+
+<div class="toolbar">
+  <button id="btnToggleSim">▶️ Bắt đầu giả lập</button>
+  <button id="btnReset" class="secondary">↺ Xóa dữ liệu biểu đồ</button>
+  <span class="small">Chu kỳ (ms):</span>
+  <input id="intervalMs" type="number" min="250" step="250" value="2000" />
+</div>
+
+<div class="cards">
+  <div class="card"><h4>Nhiệt độ</h4>
+    <div class="value" id="val-temp">-- °C</div>
+    <div class="muted">Ngưỡng: <span id="rng-temp">—</span> <span id="pill-temp" class="pill">—</span></div>
+  </div>
+  <div class="card"><h4>pH</h4>
+    <div class="value" id="val-ph">--</div>
+    <div class="muted">Ngưỡng: <span id="rng-ph">—</span> <span id="pill-ph" class="pill">—</span></div>
+  </div>
+  <div class="card"><h4>Oxy hòa tan (DO)</h4>
+    <div class="value" id="val-do">-- mg/L</div>
+    <div class="muted">Ngưỡng: <span id="rng-do">—</span> <span id="pill-do" class="pill">—</span></div>
+  </div>
+  <div class="card"><h4>Độ mặn</h4>
+    <div class="value" id="val-sal">-- ‰</div>
+    <div class="muted">Ngưỡng: <span id="rng-sal">—</span> <span id="pill-sal" class="pill">—</span></div>
+  </div>
+</div>
+
+<div id="alertBox" class="alert-box">⚠️ Có thông số vượt ngưỡng!</div>
+
+<div class="panel">
+  <h3>Cài đặt ngưỡng cảnh báo</h3>
+  <div class="grid cols-2">
+    <div>Nhiệt độ thấp <input id="tLow"  type="number" step="0.1"> cao <input id="tHigh" type="number" step="0.1"></div>
+    <div>pH thấp      <input id="pLow"  type="number" step="0.1"> cao <input id="pHigh" type="number" step="0.1"></div>
+    <div>DO thấp      <input id="dLow"  type="number" step="0.1"> cao <input id="dHigh" type="number" step="0.1"></div>
+    <div>Độ mặn thấp  <input id="sLow"  type="number" step="0.1"> cao <input id="sHigh" type="number" step="0.1"></div>
+  </div>
+  <div style="display:flex; gap:10px; align-items:center; margin-top:10px">
+    <button id="saveThBtn">💾 Lưu ngưỡng</button>
+    <span id="saveMsg" class="small"></span>
+  </div>
+</div>
+
+<canvas id="tempChart" height="160"></canvas>
+<canvas id="phChart"   height="160"></canvas>
+<canvas id="doChart"   height="160"></canvas>
+<canvas id="salChart"  height="160"></canvas>
+
+<script>
+/* -------------------- Cấu hình & lưu ngưỡng -------------------- */
+const DEFAULT_T = { temp:{low:24,high:32}, ph:{low:7.0,high:8.5}, do:{low:4.0,high:10.0}, sal:{low:0,high:25} };
+let thresholds = JSON.parse(localStorage.getItem('thresholds')||'null') || structuredClone(DEFAULT_T);
+
+function saveThresholds(){ localStorage.setItem('thresholds', JSON.stringify(thresholds)); }
+function refreshThresholdUI(){
+  const id = s=>document.getElementById(s);
+  id("tLow").value=thresholds.temp.low; id("tHigh").value=thresholds.temp.high;
+  id("pLow").value=thresholds.ph.low;   id("pHigh").value=thresholds.ph.high;
+  id("dLow").value=thresholds.do.low;   id("dHigh").value=thresholds.do.high;
+  id("sLow").value=thresholds.sal.low;  id("sHigh").value=thresholds.sal.high;
+  id("rng-temp").textContent = `${thresholds.temp.low}–${thresholds.temp.high} °C`;
+  id("rng-ph").textContent   = `${thresholds.ph.low}–${thresholds.ph.high}`;
+  id("rng-do").textContent   = `${thresholds.do.low}–${thresholds.do.high} mg/L`;
+  id("rng-sal").textContent  = `${thresholds.sal.low}–${thresholds.sal.high} ‰`;
+}
+refreshThresholdUI();
+
+document.getElementById("saveThBtn").onclick = ()=>{
+  thresholds = {
+    temp:{low:+tLow.value, high:+tHigh.value},
+    ph:{low:+pLow.value, high:+pHigh.value},
+    do:{low:+dLow.value, high:+dHigh.value},
+    sal:{low:+sLow.value, high:+sHigh.value}
+  };
+  saveThresholds(); refreshThresholdUI();
+  saveMsg.textContent='Đã lưu ✔'; setTimeout(()=>saveMsg.textContent='',1500);
+};
+
+/* -------------------- Biểu đồ -------------------- */
+function makeChart(label){
+  return new Chart(document.getElementById(label), {
+    type:'line',
+    data:{labels:[], datasets:[{label, data:[], borderWidth:2, tension:.3}]},
+    options:{responsive:true, animation:false, scales:{y:{beginAtZero:false}}}
+  });
+}
+const tempChart=makeChart('tempChart'),
+      phChart  =makeChart('phChart'),
+      doChart  =makeChart('doChart'),
+      salChart =makeChart('salChart');
+
+function pushPoint(chart, y){
+  const now=new Date().toLocaleTimeString('vi-VN');
+  chart.data.labels.push(now);
+  chart.data.datasets[0].data.push(y);
+  if(chart.data.labels.length>60){ chart.data.labels.shift(); chart.data.datasets[0].data.shift(); }
+  chart.update();
+}
+document.getElementById('btnReset').onclick = ()=>{
+  [tempChart,phChart,doChart,salChart].forEach(c=>{ c.data.labels=[]; c.data.datasets[0].data=[]; c.update(); });
+};
+
+/* -------------------- Cập nhật hiển thị & cảnh báo -------------------- */
+function setPill(el, state){
+  el.className='pill '+(state==='ok'?'ok':'warn');
+  el.textContent= state==='ok' ? 'OK' : (state==='low' ? 'Thấp' : 'Cao');
+}
+function checkStatus(name, val, unit, chart){
+  document.getElementById('val-'+name).textContent = unit?`${val} ${unit}`:val;
+  let state='ok';
+  if(val < thresholds[name].low) state='low';
+  if(val > thresholds[name].high) state='high';
+  setPill(document.getElementById('pill-'+name), state);
+  pushPoint(chart, val);
+  return state;
+}
+function updateAll(data){
+  const stT = checkStatus('temp', data.temp, '°C',   tempChart);
+  const stP = checkStatus('ph',   data.ph,  '',     phChart);
+  const stD = checkStatus('do',   data.do,  'mg/L', doChart);
+  const stS = checkStatus('sal',  data.sal, '‰',    salChart);
+  const showAlert = [stT,stP,stD,stS].some(s=>s!=='ok');
+  const ab = document.getElementById("alertBox");
+  ab.style.display = showAlert ? 'block':'none';
+}
+
+/* -------------------- Giả lập dữ liệu cảm biến -------------------- */
+let simTimer=null;
+function fakeData(){
+  return {
+    temp: +(24 + Math.random()*10).toFixed(1), // 24–34
+    ph:   +(7  + Math.random()*2 ).toFixed(2), // 7–9
+    do:   +(4  + Math.random()*6 ).toFixed(2), // 4–10
+    sal:  +(5  + Math.random()*15).toFixed(2)  // 5–20
+  };
+}
+function startSim(){
+  if(simTimer) return;
+  btnToggleSim.textContent = '⏸️ Dừng giả lập';
+  const step = ()=> updateAll(fakeData());
+  step(); // cập nhật ngay lần đầu
+  simTimer = setInterval(step, Math.max(250, +intervalMs.value||2000));
+}
+function stopSim(){
+  clearInterval(simTimer); simTimer=null;
+  btnToggleSim.textContent = '▶️ Bắt đầu giả lập';
+}
+document.getElementById('btnToggleSim').onclick = ()=> simTimer ? stopSim() : startSim();
+document.getElementById('intervalMs').addEventListener('change', ()=>{
+  if(simTimer){ stopSim(); startSim(); }
+});
+
+/* Khởi tạo 1 lần để giao diện có số ngay (từ giá trị mặc định ngưỡng) */
+updateAll({temp:NaN, ph:NaN, do:NaN, sal:NaN}); // chỉ để render pill & labels
+</script>
+
+</body>
+</html>
